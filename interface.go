@@ -5,7 +5,7 @@ import (
 )
 
 type Interface interface {
-	_isConfectionAPI()
+	_isConfectionInterface()
 }
 
 var _interfaceType = reflect.TypeOf((*Interface)(nil)).Elem()
