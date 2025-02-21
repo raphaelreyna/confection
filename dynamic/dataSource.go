@@ -11,9 +11,9 @@ import (
 )
 
 type DataSource struct {
-	Interface io.ReadCloser
-	read      func(p []byte) (n int, err error) `yaml:"-"`
-	close     func() error                      `yaml:"-"`
+	ReadCloser io.ReadCloser
+	read       func(p []byte) (n int, err error) `yaml:"-"`
+	close      func() error                      `yaml:"-"`
 }
 
 func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
@@ -22,21 +22,24 @@ func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	var readCloser io.ReadCloser
-	var subNode *yaml.Node
 	for idx, content := range value.Content {
 		switch content.Value {
 		case "file":
-			readCloser = &FileDataSource{}
-			subNode = value.Content[idx+1]
+			readCloser = &FileDataSource{
+				Filename: value.Content[idx+1].Value,
+			}
 		case "env":
-			readCloser = &EnviornmentDataSource{}
-			subNode = value.Content[idx+1]
+			readCloser = &EnviornmentDataSource{
+				Key: value.Content[idx+1].Value,
+			}
 		case "string":
-			readCloser = &StringDataSource{}
-			subNode = value.Content[idx+1]
+			readCloser = &StringDataSource{
+				Value: value.Content[idx+1].Value,
+			}
 		case "bytes":
-			readCloser = &BytesDataSource{}
-			subNode = value.Content[idx+1]
+			readCloser = &BytesDataSource{
+				Value: []byte(value.Content[idx+1].Value),
+			}
 		default:
 			return fmt.Errorf("unknown data source type %s", content.Value)
 		}
@@ -48,13 +51,9 @@ func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
 		return fmt.Errorf("data source type not found")
 	}
 
-	if err := subNode.Decode(readCloser); err != nil {
-		return fmt.Errorf("failed to decode data source: %w", err)
-	}
-
 	ds.read = readCloser.Read
 	ds.close = readCloser.Close
-	ds.Interface = readCloser
+	ds.ReadCloser = readCloser
 
 	return nil
 }
