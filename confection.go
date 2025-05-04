@@ -13,6 +13,7 @@ type _interface struct {
 
 type Confection struct {
 	interfaces map[string]*_interface
+	singletons map[string]any
 }
 
 func (c *Confection) String() string {
@@ -33,6 +34,7 @@ func (c *Confection) String() string {
 func NewConfection() *Confection {
 	c := Confection{
 		interfaces: make(map[string]*_interface, 0),
+		singletons: make(map[string]any, 0),
 	}
 
 	return &c

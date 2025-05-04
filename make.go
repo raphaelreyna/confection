@@ -10,6 +10,18 @@ func MakeCtx[I Interface](ctx context.Context, c *Confection, tc TypedConfig) (I
 	conf := getConfection(c)
 
 	var iface I
+	if tc.Name != "" {
+		singleton, ok := conf.singletons[tc.Name]
+		if ok {
+			x, ok := singleton.(I)
+			if !ok {
+				return iface, fmt.Errorf("singleton %s is not of type %T", tc.Name, x)
+			}
+			return x, nil
+		}
+		return iface, fmt.Errorf("singleton %s not found", tc.Name)
+	}
+
 	interfaceName := reflect.TypeFor[I]().String()
 	apiObj, ok := conf.interfaces[interfaceName]
 	if !ok {
@@ -25,9 +37,14 @@ func MakeCtx[I Interface](ctx context.Context, c *Confection, tc TypedConfig) (I
 	if err != nil {
 		return iface, err
 	}
+
 	x, ok := newImpl.(I)
 	if !ok {
 		return iface, fmt.Errorf("unable to cast %T to %T", newImpl, iface)
+	}
+
+	if tc.Name != "" {
+		conf.singletons[tc.Name] = newImpl
 	}
 
 	return x, nil
