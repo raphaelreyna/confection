@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -39,7 +40,8 @@ func RegisterFactory[Configuration any, Implementation any](c *Confection, typeN
 	}
 
 	// find all Interfaces that the output type implements
-	interfaceNames := make([]string, 0)
+	usingPositiveTagging := false
+	interfaceNamesAndTags := make(map[string]string, 0)
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		if field.Type.Kind() != reflect.Interface {
@@ -55,7 +57,30 @@ func RegisterFactory[Configuration any, Implementation any](c *Confection, typeN
 			continue
 		}
 
-		interfaceNames = append(interfaceNames, ifaceType.String())
+		tag := field.Tag.Get("confection")
+		if strings.Contains(tag, "implement") {
+			usingPositiveTagging = true
+			tag = "implement"
+		}
+		if tag != "implement" && tag != "-" && tag != "" {
+			panic(fmt.Sprintf("unable to register factory with config name %q for Interface %q: invalid tag %q", typeName, ifaceType.String(), tag))
+		}
+		interfaceNamesAndTags[ifaceType.String()] = tag
+	}
+
+	interfaceNames := make([]string, 0)
+	if usingPositiveTagging {
+		for interfaceName, tag := range interfaceNamesAndTags {
+			if tag == "implement" {
+				interfaceNames = append(interfaceNames, interfaceName)
+			}
+		}
+	} else {
+		for interfaceName, tag := range interfaceNamesAndTags {
+			if tag != "-" {
+				interfaceNames = append(interfaceNames, interfaceName)
+			}
+		}
 	}
 
 	// register the factory for each Interface under the config type name
