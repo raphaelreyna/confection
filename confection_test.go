@@ -213,3 +213,134 @@ typed_config:
 		}
 	}
 }
+
+// --- slice and nested TypedConfig tests ---
+
+func TestSliceOfTypedConfig(t *testing.T) {
+	c := confection.NewConfection()
+	confection.RegisterInterface[Greeter](c)
+	confection.RegisterFactory(c, "greetings.english", EnglishFactory)
+
+	type Pipeline struct {
+		Filters []confection.TypedConfig `yaml:"filters"`
+	}
+
+	input := `
+filters:
+- name: first
+  typed_config:
+    "@type": greetings.english
+    greeting: Hello
+- name: second
+  typed_config:
+    "@type": greetings.english
+    greeting: Hi there
+- name: third
+  typed_config:
+    "@type": greetings.english
+    greeting: Hey
+`
+	var pipeline Pipeline
+	if err := yaml.Unmarshal([]byte(input), &pipeline); err != nil {
+		t.Fatalf("unmarshal: %s", err)
+	}
+
+	if len(pipeline.Filters) != 3 {
+		t.Fatalf("expected 3 filters, got %d", len(pipeline.Filters))
+	}
+
+	expected := []struct {
+		name     string
+		typeName string
+		greeting string
+	}{
+		{"first", "greetings.english", "Hello"},
+		{"second", "greetings.english", "Hi there"},
+		{"third", "greetings.english", "Hey"},
+	}
+
+	for i, want := range expected {
+		tc := pipeline.Filters[i]
+		if tc.Name != want.name {
+			t.Errorf("filter[%d]: expected name %q, got %q", i, want.name, tc.Name)
+		}
+		if tc.Type() != want.typeName {
+			t.Errorf("filter[%d]: expected type %q, got %q", i, want.typeName, tc.Type())
+		}
+		g, err := confection.Make[Greeter](c, tc)
+		if err != nil {
+			t.Fatalf("filter[%d]: Make: %s", i, err)
+		}
+		if g.Greet() != want.greeting {
+			t.Errorf("filter[%d]: expected %q, got %q", i, want.greeting, g.Greet())
+		}
+	}
+}
+
+// Nested test: a factory config that itself contains a TypedConfig
+
+type Wrapper interface {
+	confection.Interface
+	Inner() Greeter
+}
+
+type WrapperConfig struct {
+	Prefix string                 `yaml:"prefix"`
+	Child  confection.TypedConfig `yaml:"child"`
+}
+
+type WrapperImpl struct {
+	Wrapper
+	inner  Greeter
+	prefix string
+}
+
+func (w *WrapperImpl) Inner() Greeter { return w.inner }
+func (w *WrapperImpl) Greet() string  { return w.prefix + w.inner.Greet() }
+
+func TestNestedTypedConfig(t *testing.T) {
+	c := confection.NewConfection()
+	confection.RegisterInterface[Greeter](c)
+	confection.RegisterInterface[Wrapper](c)
+	confection.RegisterFactory(c, "greetings.english", EnglishFactory)
+
+	wrapperFactory := func(ctx context.Context, cfg *WrapperConfig) (*WrapperImpl, error) {
+		inner, err := confection.MakeCtx[Greeter](ctx, c, cfg.Child)
+		if err != nil {
+			return nil, fmt.Errorf("nested: %w", err)
+		}
+		return &WrapperImpl{inner: inner, prefix: cfg.Prefix}, nil
+	}
+	confection.RegisterFactory(c, "wrapper", wrapperFactory)
+
+	input := `
+name: outer
+typed_config:
+  "@type": wrapper
+  prefix: "Wrapper says: "
+  child:
+    name: inner
+    typed_config:
+      "@type": greetings.english
+      greeting: Hola
+`
+	var tc confection.TypedConfig
+	if err := yaml.Unmarshal([]byte(input), &tc); err != nil {
+		t.Fatalf("unmarshal: %s", err)
+	}
+
+	w, err := confection.Make[Wrapper](c, tc)
+	if err != nil {
+		t.Fatalf("Make: %s", err)
+	}
+
+	if w.Inner().Greet() != "Hola" {
+		t.Errorf("inner: expected 'Hola', got %q", w.Inner().Greet())
+	}
+
+	// WrapperImpl also implements Greet through composition
+	wImpl := w.(*WrapperImpl)
+	if wImpl.Greet() != "Wrapper says: Hola" {
+		t.Errorf("wrapper: expected 'Wrapper says: Hola', got %q", wImpl.Greet())
+	}
+}
