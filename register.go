@@ -12,17 +12,13 @@ import (
 func RegisterInterface[I Interface](c *Confection) {
 	conf := getConfection(c)
 
-	var i I
-
 	name := reflect.TypeFor[I]().String()
 
 	if _, ok := conf.interfaces[name]; ok {
 		panic(fmt.Sprintf("unable to register Interface %q: Interface already registered", name))
 	}
 
-	conf.interfaces[name] = &_interface{
-		_interface: i,
-	}
+	conf.interfaces[name] = &_interface{}
 }
 
 type Factory[Configuration any, Implementation any] func(context.Context, Configuration) (Implementation, error)
@@ -32,11 +28,11 @@ func RegisterFactory[Configuration any, Implementation any](c *Confection, typeN
 
 	t := reflect.TypeFor[Implementation]()
 	if t.Kind() != reflect.Ptr {
-		panic(fmt.Sprintf("unable register factory for Interface %q: type %T is not a pointer to a struct", t.Kind(), t))
+		panic(fmt.Sprintf("unable to register factory: type %s is not a pointer to a struct", t))
 	}
 	t = t.Elem()
 	if t.Kind() != reflect.Struct {
-		panic(fmt.Sprintf("unable register factory for Interface %q: type %T is not a struct", t.Kind(), t))
+		panic(fmt.Sprintf("unable to register factory: type %s is not a struct", t))
 	}
 
 	// find all Interfaces that the output type implements

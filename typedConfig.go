@@ -1,6 +1,7 @@
 package confection
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -35,7 +36,10 @@ func (n *node) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 	if typePosition == -1 {
-		return fmt.Errorf("type not found in node")
+		return errors.New("@type not found in typed_config")
+	}
+	if typePosition+1 >= len(value.Content) {
+		return errors.New("@type has no value in typed_config")
 	}
 	n._type = value.Content[typePosition+1].Value
 
@@ -47,7 +51,7 @@ func (n *node) UnmarshalYAML(value *yaml.Node) error {
 type TypedConfig struct {
 	Name        string     `yaml:"name"`
 	TypedConfig *yaml.Node `yaml:"typed_config"`
-	_type       string     `yaml:"type"`
+	_type       string
 }
 
 func (c *TypedConfig) String() string {
@@ -66,6 +70,10 @@ func (c *TypedConfig) UnmarshalYAML(value *yaml.Node) error {
 	var t T
 	if err := value.Decode(&t); err != nil {
 		return err
+	}
+
+	if t.TypedConfig == nil {
+		return errors.New("typed_config is required")
 	}
 
 	c.Name = t.Name

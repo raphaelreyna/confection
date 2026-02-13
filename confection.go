@@ -7,7 +7,6 @@ import (
 )
 
 type _interface struct {
-	_interface      Interface
 	registeredTypes map[string]func(context.Context, *yaml.Node) (any, error)
 }
 

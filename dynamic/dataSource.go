@@ -2,6 +2,7 @@ package dynamic
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,37 +19,39 @@ type DataSource struct {
 
 func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
 	if ds == nil {
-		return fmt.Errorf("data source is nil")
+		return errors.New("data source is nil")
 	}
 
 	var readCloser io.ReadCloser
-	for idx, content := range value.Content {
-		switch content.Value {
+	for idx := 0; idx+1 < len(value.Content); idx += 2 {
+		key := value.Content[idx].Value
+		val := value.Content[idx+1].Value
+		switch key {
 		case "file":
 			readCloser = &FileDataSource{
-				Filename: value.Content[idx+1].Value,
+				Filename: val,
 			}
 		case "env":
-			readCloser = &EnviornmentDataSource{
-				Key: value.Content[idx+1].Value,
+			readCloser = &EnvironmentDataSource{
+				Key: val,
 			}
 		case "string":
 			readCloser = &StringDataSource{
-				Value: value.Content[idx+1].Value,
+				Value: val,
 			}
 		case "bytes":
 			readCloser = &BytesDataSource{
-				Value: []byte(value.Content[idx+1].Value),
+				Value: []byte(val),
 			}
 		default:
-			return fmt.Errorf("unknown data source type %s", content.Value)
+			return fmt.Errorf("unknown data source type %s", key)
 		}
 		if readCloser != nil {
 			break
 		}
 	}
 	if readCloser == nil {
-		return fmt.Errorf("data source type not found")
+		return errors.New("data source type not found")
 	}
 
 	ds.read = readCloser.Read
@@ -60,14 +63,14 @@ func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
 
 func (ds *DataSource) Read(p []byte) (n int, err error) {
 	if ds.read == nil {
-		return 0, fmt.Errorf("data source not initialized")
+		return 0, errors.New("data source not initialized")
 	}
 	return ds.read(p)
 }
 
 func (ds *DataSource) Close() error {
 	if ds.close == nil {
-		return fmt.Errorf("data source not initialized")
+		return errors.New("data source not initialized")
 	}
 	return ds.close()
 }
@@ -134,12 +137,12 @@ func (b *BytesDataSource) Close() error {
 	return nil
 }
 
-type EnviornmentDataSource struct {
+type EnvironmentDataSource struct {
 	Key string
 	buf *strings.Reader
 }
 
-func (e *EnviornmentDataSource) Read(p []byte) (n int, err error) {
+func (e *EnvironmentDataSource) Read(p []byte) (n int, err error) {
 	if e.buf == nil {
 		val, ok := os.LookupEnv(e.Key)
 		if !ok {
@@ -151,7 +154,7 @@ func (e *EnviornmentDataSource) Read(p []byte) (n int, err error) {
 	return e.buf.Read(p)
 }
 
-func (e *EnviornmentDataSource) Close() error {
+func (e *EnvironmentDataSource) Close() error {
 	e.buf = nil
 	return nil
 }
