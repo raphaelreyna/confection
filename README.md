@@ -1,109 +1,123 @@
 # Confection
 
-A configuration library written in Go with a focus on typed configs.
+Config-driven polymorphism for Go. Register interface implementations with typed factory functions, then construct them from YAML using a `@type` discriminator — similar to how Envoy proxy handles its filter configs.
 
-# Example
+```
+go get github.com/raphaelreyna/confection
+```
 
-```go
-package main
+## How it works
 
-import (
-	"context"
+1. Define an interface that embeds `confection.Interface`
+2. Register a factory function that maps a config struct to an implementation
+3. Put a `@type` field in your YAML to select which factory to use
+4. Call `Make` to get back a concrete implementation
 
-	"github.com/raphaelreyna/confection"
-	"gopkg.in/yaml.v3"
-)
+The `@type` field is stripped before your factory's config struct is deserialized, so factories receive clean, strongly-typed configs without knowing about the dispatch mechanism.
 
-// In general we just want a person that says a greeting
-// and would like to support multiple languages / greetings.
-type Person interface {
-	confection.Interface
-	SayHello() string
-}
+## Example
 
-const config = `
+```yaml
 greeting:
   name: spanish
   typed_config:
     "@type": greetings.spanish
-    use_formal: true # tu v.s usted (optional, default: false)
-`
+    use_formal: true
+```
 
-// Config is the configuration struct that will be used to
-// unmarshal the YAML configuration.
-// This is the config for our application.
-type Config struct {
-	Greeting confection.TypedConfig `yaml:"greeting"`
+```go
+// Define your interface
+type Person interface {
+    confection.Interface
+    SayHello() string
 }
 
-// The main function is the entry point of the application.
-// It parses the YAML configuration and uses confection to
-// create the appropriate Person implementation based on the
-// configuration.
-func main() {
-	confection.RegisterInterface[Person](nil)
-
-	// This line may be called from anywhere in the codebase
-	// such as from a blank import or from a different package
-	// in an init function, etc.
-	// Its included here for the purpose of the example.
-	confection.RegisterFactory(nil, "greetings.spanish", SpanishFactory)
-
-	var c Config
-	err := yaml.Unmarshal([]byte(config), &c)
-	if err != nil {
-		panic(err)
-	}
-
-	// This is where we use confection to create the Person
-	// implementation based on the configuration.
-	person, err := confection.Make[Person](nil, c.Greeting)
-	if err != nil {
-		panic(err)
-	}
-
-	// This is where we use the Person implementation
-	// to say hello.
-	// The implementation will depend on the configuration.
-	println(person.SayHello())
-}
-
-// ------------------------------------------------------
-// The following code is the implementation of the Spanish greeting.
-// This is an example of how one could add custom types to the
-// main application without having to modify the main code.
-// ------------------------------------------------------
-
-// SpanishConfig is a struct that represents the configuration
-// for the Spanish greeting.
-// Note that we are able to use our custom config type.
-type SpanishConfig struct {
-	Formal bool `yaml:"use_formal"`
-}
-
-// Spanish is a struct that implements the Person interface
-// and represents a Spanish greeting.
+// Define an implementation
 type Spanish struct {
-	Person // confection.Interface that this struct implements
-	phrase string
+    Person
+    phrase string
 }
 
-// SayHello implements the Person interface
-func (s *Spanish) SayHello() string {
-	return s.phrase
+func (s *Spanish) SayHello() string { return s.phrase }
+
+// Define a typed factory
+func SpanishFactory(_ context.Context, cfg *SpanishConfig) (*Spanish, error) {
+    phrase := "Hola, ¿cómo estás?"
+    if cfg.Formal {
+        phrase = "Hola, ¿cómo está usted?"
+    }
+    return &Spanish{phrase: phrase}, nil
 }
 
-// SpanishFactory is a factory function that creates a Spanish instance
-// based on the provided configuration.
-// Note that we are able to use our custom config type without
-// having to deal with the underlying YAML node or the `any` type.
-func SpanishFactory(_ context.Context, config *SpanishConfig) (*Spanish, error) {
-	phrase := "Hola, ¿cómo estás?"
-	if config.Formal {
-		phrase = "Hola, ¿cómo está usted?"
-	}
-	return &Spanish{
-		phrase: phrase,
-	}, nil
+type SpanishConfig struct {
+    Formal bool `yaml:"use_formal"`
 }
 ```
+
+```go
+// Wire it up
+confection.RegisterInterface[Person](nil)
+confection.RegisterFactory(nil, "greetings.spanish", SpanishFactory)
+
+// Parse config and construct
+var c struct {
+    Greeting confection.TypedConfig `yaml:"greeting"`
+}
+yaml.Unmarshal(configBytes, &c)
+
+person, err := confection.Make[Person](nil, c.Greeting)
+person.SayHello() // "Hola, ¿cómo está usted?"
+```
+
+## Nested and composed configs
+
+`TypedConfig` fields can be nested — a factory's config struct can itself contain `TypedConfig` fields, which are resolved by calling `Make` inside the factory. Slices of `TypedConfig` also work for pipeline-style configs:
+
+```yaml
+filters:
+- name: auth
+  typed_config:
+    "@type": middleware.auth
+    provider: oauth2
+- name: ratelimit
+  typed_config:
+    "@type": middleware.ratelimit
+    max_rps: 100
+```
+
+## Scoped registries
+
+Passing `nil` as the first argument to any function uses a global registry. For testing or isolation, create a scoped one:
+
+```go
+c := confection.NewConfection()
+confection.RegisterInterface[Person](c)
+confection.RegisterFactory(c, "greetings.spanish", SpanishFactory)
+person, err := confection.Make[Person](c, tc)
+```
+
+## Dynamic data sources
+
+The `dynamic` sub-package provides `DataSource`, a YAML-unmarshallable `io.ReadCloser` for config values that resolve at read time:
+
+```yaml
+credentials:
+  file: /etc/secrets/key.pem
+```
+
+Built-in sources: `file`, `env`, `string`, `bytes`. Register custom ones:
+
+```go
+dynamic.RegisterSource(nil, "vault", func(value string) (io.ReadCloser, error) {
+    return vault.ReadSecret(value)
+})
+```
+
+```yaml
+credentials:
+  vault: secret/my-app/key
+```
+
+## Thread safety
+
+All registries are safe for concurrent use. Registration takes a write lock, `Make` and data source lookups take a read lock.
