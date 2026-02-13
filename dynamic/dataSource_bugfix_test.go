@@ -108,6 +108,9 @@ source:
 	if !strings.Contains(err.Error(), "unknown data source type") {
 		t.Fatalf("unexpected error: %s", err)
 	}
+	if !strings.Contains(err.Error(), "line") {
+		t.Errorf("expected line number in error, got: %s", err)
+	}
 }
 
 func TestDataSource_ReadBeforeInit(t *testing.T) {

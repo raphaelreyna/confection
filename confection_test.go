@@ -48,6 +48,9 @@ func TestTypedConfig_MissingTypedConfig(t *testing.T) {
 	if !strings.Contains(err.Error(), "typed_config is required") {
 		t.Fatalf("unexpected error: %s", err)
 	}
+	if !strings.Contains(err.Error(), "line") {
+		t.Errorf("expected line number in error, got: %s", err)
+	}
 }
 
 func TestTypedConfig_MissingAtType(t *testing.T) {
@@ -63,6 +66,9 @@ typed_config:
 	}
 	if !strings.Contains(err.Error(), "@type not found") {
 		t.Fatalf("unexpected error: %s", err)
+	}
+	if !strings.Contains(err.Error(), "line") {
+		t.Errorf("expected line number in error, got: %s", err)
 	}
 }
 
@@ -159,5 +165,8 @@ typed_config:
 	}
 	if !strings.Contains(err.Error(), "not registered") {
 		t.Fatalf("unexpected error: %s", err)
+	}
+	if !strings.Contains(err.Error(), "line") {
+		t.Errorf("expected line number in error, got: %s", err)
 	}
 }

@@ -32,11 +32,11 @@ func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
 
 		factory, ok := reg.lookup(key)
 		if !ok {
-			return fmt.Errorf("unknown data source type %s", key)
+			return fmt.Errorf("line %d: unknown data source type %s", value.Content[idx].Line, key)
 		}
 		rc, err := factory(val)
 		if err != nil {
-			return fmt.Errorf("data source %s: %w", key, err)
+			return fmt.Errorf("line %d: data source %s: %w", value.Content[idx].Line, key, err)
 		}
 		readCloser = rc
 		break
