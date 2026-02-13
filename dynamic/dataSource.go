@@ -13,8 +13,9 @@ import (
 
 type DataSource struct {
 	ReadCloser io.ReadCloser
-	read       func(p []byte) (n int, err error) `yaml:"-"`
-	close      func() error                      `yaml:"-"`
+	Registry   *Registry `yaml:"-"`
+	read       func(p []byte) (n int, err error)
+	close      func() error
 }
 
 func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
@@ -22,33 +23,23 @@ func (ds *DataSource) UnmarshalYAML(value *yaml.Node) error {
 		return errors.New("data source is nil")
 	}
 
+	reg := getRegistry(ds.Registry)
+
 	var readCloser io.ReadCloser
 	for idx := 0; idx+1 < len(value.Content); idx += 2 {
 		key := value.Content[idx].Value
 		val := value.Content[idx+1].Value
-		switch key {
-		case "file":
-			readCloser = &FileDataSource{
-				Filename: val,
-			}
-		case "env":
-			readCloser = &EnvironmentDataSource{
-				Key: val,
-			}
-		case "string":
-			readCloser = &StringDataSource{
-				Value: val,
-			}
-		case "bytes":
-			readCloser = &BytesDataSource{
-				Value: []byte(val),
-			}
-		default:
+
+		factory, ok := reg.lookup(key)
+		if !ok {
 			return fmt.Errorf("unknown data source type %s", key)
 		}
-		if readCloser != nil {
-			break
+		rc, err := factory(val)
+		if err != nil {
+			return fmt.Errorf("data source %s: %w", key, err)
 		}
+		readCloser = rc
+		break
 	}
 	if readCloser == nil {
 		return errors.New("data source type not found")
@@ -157,4 +148,22 @@ func (e *EnvironmentDataSource) Read(p []byte) (n int, err error) {
 func (e *EnvironmentDataSource) Close() error {
 	e.buf = nil
 	return nil
+}
+
+// Built-in source factories used by the default registry.
+
+func fileSource(value string) (io.ReadCloser, error) {
+	return &FileDataSource{Filename: value}, nil
+}
+
+func envSource(value string) (io.ReadCloser, error) {
+	return &EnvironmentDataSource{Key: value}, nil
+}
+
+func stringSource(value string) (io.ReadCloser, error) {
+	return &StringDataSource{Value: value}, nil
+}
+
+func bytesSource(value string) (io.ReadCloser, error) {
+	return &BytesDataSource{Value: []byte(value)}, nil
 }
