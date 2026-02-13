@@ -3,13 +3,15 @@ package dynamic
 import (
 	"fmt"
 	"io"
+	"sync"
 )
 
 // SourceFactory creates an io.ReadCloser from a YAML string value.
 type SourceFactory func(value string) (io.ReadCloser, error)
 
-// Registry holds registered data source types.
+// Registry holds registered data source types for use with DataSource.
 type Registry struct {
+	mu      sync.RWMutex
 	sources map[string]SourceFactory
 }
 
@@ -30,13 +32,18 @@ func newDefaultRegistry() *Registry {
 	return r
 }
 
-// Global is the package-level default registry, pre-loaded with built-in sources.
+// Global is the package-level default registry, pre-loaded with built-in sources
+// (file, env, string, bytes).
 var Global *Registry
 
+var globalOnce sync.Once
+
 func getGlobal() *Registry {
-	if Global == nil {
-		Global = newDefaultRegistry()
-	}
+	globalOnce.Do(func() {
+		if Global == nil {
+			Global = newDefaultRegistry()
+		}
+	})
 	return Global
 }
 
@@ -48,10 +55,12 @@ func getRegistry(r *Registry) *Registry {
 }
 
 // RegisterSource registers a SourceFactory under the given name.
-// Passing nil for r uses the global registry.
+// Pass nil for r to use the global registry.
 // Panics if the name is already registered.
 func RegisterSource(r *Registry, name string, factory SourceFactory) {
 	reg := getRegistry(r)
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
 	if _, exists := reg.sources[name]; exists {
 		panic(fmt.Sprintf("data source type %q already registered", name))
 	}
@@ -59,6 +68,8 @@ func RegisterSource(r *Registry, name string, factory SourceFactory) {
 }
 
 func (reg *Registry) lookup(name string) (SourceFactory, bool) {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
 	f, ok := reg.sources[name]
 	return f, ok
 }

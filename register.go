@@ -9,10 +9,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// RegisterInterface registers an interface type with the given Confection registry.
+// Pass nil to use the global registry.
+// Panics if the interface is already registered.
 func RegisterInterface[I Interface](c *Confection) {
 	conf := getConfection(c)
 
 	name := reflect.TypeFor[I]().String()
+
+	conf.mu.Lock()
+	defer conf.mu.Unlock()
 
 	if _, ok := conf.interfaces[name]; ok {
 		panic(fmt.Sprintf("unable to register Interface %q: Interface already registered", name))
@@ -21,8 +27,15 @@ func RegisterInterface[I Interface](c *Confection) {
 	conf.interfaces[name] = &_interface{}
 }
 
+// Factory is a function that creates an Implementation from a Configuration.
 type Factory[Configuration any, Implementation any] func(context.Context, Configuration) (Implementation, error)
 
+// RegisterFactory registers a factory function that creates an Implementation
+// from a Configuration, binding it to the given @type name.
+// The Implementation must be a pointer to a struct that embeds one or more
+// registered confection Interface types.
+// Pass nil for c to use the global registry.
+// Panics on invalid types, unregistered interfaces, or duplicate registrations.
 func RegisterFactory[Configuration any, Implementation any](c *Confection, typeName string, factory Factory[Configuration, Implementation]) {
 	conf := getConfection(c)
 
@@ -78,6 +91,9 @@ func RegisterFactory[Configuration any, Implementation any](c *Confection, typeN
 			}
 		}
 	}
+
+	conf.mu.Lock()
+	defer conf.mu.Unlock()
 
 	// register the factory for each Interface under the config type name
 	for _, interfaceName := range interfaceNames {

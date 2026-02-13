@@ -1,6 +1,7 @@
 package dynamic_test
 
 import (
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -107,5 +108,47 @@ source:
 	}
 	if string(data) != "global test" {
 		t.Errorf("expected 'global test', got %q", string(data))
+	}
+}
+
+func TestConcurrent_DataSourceLookup(t *testing.T) {
+	reg := dynamic.NewRegistry()
+	dynamic.RegisterSource(reg, "string", func(value string) (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader(value)), nil
+	})
+
+	const n = 100
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			input := `
+source:
+  string: "concurrent"
+`
+			var cfg struct {
+				Source dynamic.DataSource `yaml:"source"`
+			}
+			cfg.Source.Registry = reg
+
+			if err := yaml.Unmarshal([]byte(input), &cfg); err != nil {
+				errs <- err
+				return
+			}
+			data, err := io.ReadAll(&cfg.Source)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if string(data) != "concurrent" {
+				errs <- fmt.Errorf("expected 'concurrent', got %q", string(data))
+				return
+			}
+			errs <- nil
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -2,6 +2,7 @@ package confection_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -168,5 +169,47 @@ typed_config:
 	}
 	if !strings.Contains(err.Error(), "line") {
 		t.Errorf("expected line number in error, got: %s", err)
+	}
+}
+
+// --- concurrency tests ---
+
+func TestConcurrent_RegisterAndMake(t *testing.T) {
+	c := confection.NewConfection()
+	confection.RegisterInterface[Greeter](c)
+	confection.RegisterFactory(c, "greetings.english", EnglishFactory)
+
+	input := `
+name: english
+typed_config:
+  "@type": greetings.english
+  greeting: concurrent
+`
+	var tc confection.TypedConfig
+	if err := yaml.Unmarshal([]byte(input), &tc); err != nil {
+		t.Fatalf("unmarshal: %s", err)
+	}
+
+	// Run many concurrent Make calls
+	const n = 100
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			g, err := confection.Make[Greeter](c, tc)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if g.Greet() != "concurrent" {
+				errs <- fmt.Errorf("expected 'concurrent', got %q", g.Greet())
+				return
+			}
+			errs <- nil
+		}()
+	}
+	for i := 0; i < n; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
 	}
 }

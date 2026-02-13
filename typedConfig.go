@@ -47,6 +47,13 @@ func (n *node) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
+// TypedConfig represents a named configuration block with a @type discriminator.
+// It is unmarshalled from YAML in the form:
+//
+//	name: my-thing
+//	typed_config:
+//	  "@type": some.type.name
+//	  key: value
 type TypedConfig struct {
 	Name        string     `yaml:"name"`
 	TypedConfig *yaml.Node `yaml:"typed_config"`
@@ -59,6 +66,7 @@ func (c *TypedConfig) String() string {
 	return fmt.Sprintf("Name: %s, TypedConfig: %v, Type: %s", c.Name, c.TypedConfig, c._type)
 }
 
+// Type returns the @type discriminator value from the typed_config block.
 func (c *TypedConfig) Type() string {
 	return c._type
 }

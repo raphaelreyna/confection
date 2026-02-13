@@ -6,8 +6,13 @@ import (
 	"reflect"
 )
 
+// MakeCtx constructs an implementation of interface I from the given TypedConfig,
+// using the provided context. Pass nil for c to use the global registry.
 func MakeCtx[I Interface](ctx context.Context, c *Confection, tc TypedConfig) (I, error) {
 	conf := getConfection(c)
+
+	conf.mu.RLock()
+	defer conf.mu.RUnlock()
 
 	var iface I
 	interfaceName := reflect.TypeFor[I]().String()
@@ -33,6 +38,8 @@ func MakeCtx[I Interface](ctx context.Context, c *Confection, tc TypedConfig) (I
 	return x, nil
 }
 
+// Make constructs an implementation of interface I from the given TypedConfig,
+// using context.Background(). Pass nil for c to use the global registry.
 func Make[I Interface](c *Confection, tc TypedConfig) (I, error) {
 	ctx := context.Background()
 	return MakeCtx[I](ctx, c, tc)

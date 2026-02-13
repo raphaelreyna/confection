@@ -11,6 +11,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// DataSource is a YAML-unmarshallable io.ReadCloser that resolves its
+// underlying data from a registered source type. Set Registry to use
+// a scoped registry; nil uses the global default.
 type DataSource struct {
 	ReadCloser io.ReadCloser
 	Registry   *Registry `yaml:"-"`
@@ -66,6 +69,7 @@ func (ds *DataSource) Close() error {
 	return ds.close()
 }
 
+// FileDataSource reads from a file, opening it lazily on first Read.
 type FileDataSource struct {
 	Filename string
 	file     *os.File
@@ -92,6 +96,7 @@ func (f *FileDataSource) Close() error {
 	return nil
 }
 
+// StringDataSource reads from an in-memory string.
 type StringDataSource struct {
 	Value string
 	buf   *strings.Reader
@@ -110,6 +115,7 @@ func (s *StringDataSource) Close() error {
 	return nil
 }
 
+// BytesDataSource reads from an in-memory byte slice.
 type BytesDataSource struct {
 	Value []byte
 	buf   *bytes.Reader
@@ -128,6 +134,7 @@ func (b *BytesDataSource) Close() error {
 	return nil
 }
 
+// EnvironmentDataSource reads from an environment variable, resolved lazily on first Read.
 type EnvironmentDataSource struct {
 	Key string
 	buf *strings.Reader
